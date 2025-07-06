@@ -21,29 +21,16 @@
     { nixpkgs, ... }:
     let
       forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
-    in
-    {
-      devShells = forAllSystems (
-        system:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-          tests = import ./. { inherit pkgs; };
-        in
-        tests.run
-      );
+      forCI = nixpkgs.lib.genAttrs [
+        "aarch64-darwin"
+        "x86_64-linux"
+      ];
 
-      packages = forAllSystems (
+      tests =
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
-
-          testPackages =
-            let
-              tests = import ./. { inherit pkgs; };
-              renameTestPkg = n: lib.nameValuePair "test-${n}";
-            in
-            lib.mapAttrs' renameTestPkg tests.build;
 
           integrationTestPackages =
             let
@@ -108,13 +95,42 @@
               ) numChunks
             );
         in
-        testPackages
-        // integrationTestPackages
+        integrationTestPackages
         // testChunks
         // (lib.listToAttrs [
           testAllNoBig
           testAllNoBigIfd
-        ])
+        ]);
+
+    in
+    {
+      buildbot = forCI (system: tests system);
+
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          tests = import ./. { inherit pkgs; };
+        in
+        tests.run
+      );
+
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          lib = pkgs.lib;
+
+          # testPackages: only included in packages
+          testPackages =
+            let
+              tests = import ./. { inherit pkgs; };
+              renameTestPkg = n: lib.nameValuePair "test-${n}";
+            in
+            lib.mapAttrs' renameTestPkg tests.build;
+
+        in
+        testPackages // tests system
       );
     };
 }
